@@ -182,6 +182,9 @@ Serwer:
 **VelociDrone (pierwszy):**
 - Nie ma go na Steamie. Ma lokalną „bazę” z historią gry i łącznym czasem lotu; „Reset game” ją czyści. Format i położenie nie są udokumentowane.
 - Znane miejsca do sprawdzenia: macOS `~/Library/Application Support/VelociDrone/VelociDrone/` (według strony pomocy wydawcy, sprzed ok. 2 lat), Windows: folder, w którym rozpakowano launcher (PatchKit), oraz rejestr `HKCU\Software\VelociDrone\VelociDrone` (ustawienia Unity) i `%USERPROFILE%\AppData\LocalLow\…`. Linux: do ustalenia.
+- **Trop z Reddita (niepotwierdzony):** łączny czas lotu siedzi w bazie SQLite. macOS: `~/Library/Application Support/com.velocidrone.velocidrone/user11.db` (folder `Library` jest ukryty), tabela `sim_states`, kolumna `logged_time`, wartość w sekundach jako liczba z ułamkiem (np. `147473.414` ≈ 41 h). To łączny licznik, nie lista sesji, więc liczymy przyrosty jak przy Steamie.
+  - Czytamy wyłącznie do odczytu: najlepiej kopia pliku (razem z ewentualnymi `-wal`/`-shm`) i odczyt z kopii, ewentualnie `file:…?mode=ro&immutable=1`. Companion nigdy nie zapisuje do tej bazy. Autor wątku edytował ją w TextEdit i zepsuł instalację, musiał przeinstalować grę.
+  - Do sprawdzenia w Etapie 0: czy `user11` to stała nazwa, czy zależy od konta/wersji (wtedy szukamy `user*.db` i wybieramy właściwy plik), ile wierszy ma `sim_states` i który jest bieżący, oraz położenie pliku na Windowsie i Linuksie (prawdopodobnie odpowiednik `com.velocidrone.velocidrone` w AppData/`~/.local/share`, niezweryfikowane).
 - **Etap 0 planu to ustalenie formatu na Twoich plikach** (patrz niżej). Od tego zależy, czy dostaniemy pojedyncze sesje, czy tylko łączny licznik (wtedy liczymy przyrosty dzienne jak przy Steamie).
 - Dodatkowo, opcjonalnie: WebSocket `ws://<IP w LAN>:60003/velocidrone` (włączany w ustawieniach gry, wymaga roli race managera i pustej wiadomości co 10 s). Daje tylko zdarzenia wyścigów (start/stop, okrążenia, czasy), więc nadaje się na „sesje wyścigowe z czasami okrążeń”, a nie jako główne źródło nalotu.
 
@@ -327,4 +330,5 @@ Etapy 1 i 2 można robić równolegle, gdy etap 0 trwa.
 - Microsoft, opcje podpisywania kodu: https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options
 - Azure Artifact Signing, cennik: https://azure.microsoft.com/pricing/details/artifact-signing/
 - Bat Cave Games (VelociDrone), odinstalowanie na Macu: https://batcavegames.freshdesk.com/support/solutions/articles/16000095364-how-to-uninstall-on-a-mac
+- r/Velocidrone, „68 hours in sim because I forgot to exit session” (komentarz u/garza-0 o `user11.db` / `sim_states.logged_time`), zrzuty ekranu od Michała w projekcie, 2026-10-08.
 - VelociDrone WebSocket, przykład klienta: https://github.com/eedok/VelocidroneWebSocketConsumer
