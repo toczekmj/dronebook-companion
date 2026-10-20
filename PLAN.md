@@ -180,16 +180,21 @@ Serwer:
 ### 4.3 Symulatory
 
 **VelociDrone (pierwszy):**
-- Nie ma go na Steamie. Ma lokalną „bazę” z historią gry i łącznym czasem lotu; „Reset game” ją czyści. Format i położenie nie są udokumentowane.
-- Znane miejsca do sprawdzenia: macOS `~/Library/Application Support/VelociDrone/VelociDrone/` (według strony pomocy wydawcy, sprzed ok. 2 lat), Windows: folder, w którym rozpakowano launcher (PatchKit), oraz rejestr `HKCU\Software\VelociDrone\VelociDrone` (ustawienia Unity) i `%USERPROFILE%\AppData\LocalLow\…`. Linux: do ustalenia.
-- **Trop z Reddita (niepotwierdzony):** łączny czas lotu siedzi w bazie SQLite. macOS: `~/Library/Application Support/com.velocidrone.velocidrone/user11.db` (folder `Library` jest ukryty), tabela `sim_states`, kolumna `logged_time`, wartość w sekundach jako liczba z ułamkiem (np. `147473.414` ≈ 41 h). To łączny licznik, nie lista sesji, więc liczymy przyrosty jak przy Steamie.
-  - Czytamy wyłącznie do odczytu: najlepiej kopia pliku (razem z ewentualnymi `-wal`/`-shm`) i odczyt z kopii, ewentualnie `file:…?mode=ro&immutable=1`. Companion nigdy nie zapisuje do tej bazy. Autor wątku edytował ją w TextEdit i zepsuł instalację, musiał przeinstalować grę.
-  - Do sprawdzenia w Etapie 0: czy `user11` to stała nazwa, czy zależy od konta/wersji (wtedy szukamy `user*.db` i wybieramy właściwy plik), ile wierszy ma `sim_states` i który jest bieżący, oraz położenie pliku na Windowsie i Linuksie (prawdopodobnie odpowiednik `com.velocidrone.velocidrone` w AppData/`~/.local/share`, niezweryfikowane).
-- **Druga możliwa ścieżka (niepotwierdzona): WebSocket z danymi IMU.** Według komentarza na r/Velocidrone gra dostała w kwietniu 2026 aktualizację, która wystawia przez WebSocket dane IMU, a sesje da się oglądać narzędziami społeczności „velocicapture” / „velocistat” (komentator twierdzi, że to jedyne działające). Gdyby to działało, companion dostawałby osobne sesje (start/koniec lotu) zamiast samego łącznego licznika z `user11.db`.
-  - Do sprawdzenia w Etapie 0: czy to ten sam endpoint co wyścigowy (`:60003/velocidrone`) czy osobny, port i format wiadomości, czy działa bez roli race managera, czy da się z tego wiarygodnie wyznaczyć czas w powietrzu (np. po ruchu/przepustnicy), oraz skąd są velocicapture/velocistat (repo, licencja, czy można się na nich wzorować). Nie znalazłem ich w wyszukiwarce, więc nazwy są tylko z komentarza.
-  - Kierunek: SQLite jako źródło łącznego czasu (pewny bilans), WebSocket jako opcjonalne źródło pojedynczych sesji, gdy gra jest uruchomiona razem z companionem.
-- **Etap 0 planu to ustalenie formatu na Twoich plikach** (patrz niżej). Od tego zależy, czy dostaniemy pojedyncze sesje, czy tylko łączny licznik (wtedy liczymy przyrosty dzienne jak przy Steamie).
-- Dodatkowo, opcjonalnie: WebSocket `ws://<IP w LAN>:60003/velocidrone` (włączany w ustawieniach gry, wymaga roli race managera i pustej wiadomości co 10 s). Daje tylko zdarzenia wyścigów (start/stop, okrążenia, czasy), więc nadaje się na „sesje wyścigowe z czasami okrążeń”, a nie jako główne źródło nalotu.
+- Nie ma go na Steamie. „Reset game” czyści lokalną bazę z łącznym czasem lotu. Poniższe sprawdzone 20.10.2026 na komputerze Michała (Windows 11, VelociDrone 1.16), tylko do odczytu.
+- **Źródło 1, łączny czas (potwierdzone): SQLite `user11.db`.**
+  - Windows: `%USERPROFILE%\AppData\LocalLow\velocidrone\velocidrone\user11.db` (~360 MB). macOS według Reddita: `~/Library/Application Support/com.velocidrone.velocidrone/user11.db`. Linux: do ustalenia.
+  - Tabela `sim_states` (pary `name`/`value`), wiersz `name = 'logged_time'`, wartość w sekundach jako tekst (u Michała `103086.3` ≈ 28,6 h). To łączny licznik, nie lista sesji, więc liczymy przyrosty jak przy Steamie.
+  - `11` w nazwie to nie numer konta, tylko poziom schematu bazy (`sim_states.userdblevel = 11`), więc może się zmienić po aktualizacji gry. Companion szuka `user*.db` i bierze plik z najwyższym numerem.
+  - W tym samym folderze `settings.db` też ma `logged_time`, ale z wartością `0.0`; pomijamy. `Player.log` nie ma czasów lotu.
+  - Czytamy wyłącznie do odczytu: kopia pliku (razem z ewentualnymi `-wal`/`-shm`) i odczyt z kopii, ewentualnie `file:…?mode=ro&immutable=1`. Companion nigdy nie zapisuje do tej bazy (autor wątku na Reddicie edytował ją w TextEdit i musiał przeinstalować grę).
+- **Źródło 2, pojedyncze loty (potwierdzone): WebSocket gry.**
+  - Włączany w ustawieniach gry („WS communication” i „IMU data”; w bazie `sim_states.use-web-socket` i `web-socket-imu`). Rola race managera nie była potrzebna.
+  - Adres `ws://<IP w LAN>:60003/velocidrone/`. Gra nasłuchuje tylko na adresie z ustawienia `sim_states.local-ip-address`, nie na `127.0.0.1`. Inne ścieżki dają `400 Bad Request`. Serwer to SocketsUnderControl (eToile).
+  - Ramki binarne z JSON-em. `{"imu": {roll, pitch, yaw, PositionX/Y/Z, AttitudeX/Y/Z/W, SpeedX/Y/Z, timestamp}}` około 57 razy na sekundę (`timestamp` w ms), **tylko w trakcie lotu**: w menu strumień się zatrzymuje. Lot = ciągły strumień IMU; przerwa dłuższa niż kilka sekund kończy lot.
+  - Oprócz tego zdarzenia wyścigu: `racestatus` (`start`, `abort`, `race finished`), `racetype`, `countdown`, `racedata` (per pilot: pozycja, okrążenie, bramka, czas), `spectatorChange`, `FinishGate`. Dają okrążenia, gdyby kiedyś były potrzebne.
+  - Wejście do menu (np. zmiana drona) zamyka połączenie i serwer na chwilę przestaje nasłuchiwać; po powrocie do lotu nasłuchuje znowu. Companion musi więc ponawiać połączenie co kilka sekund, póki gra działa.
+  - Do sprawdzenia: czy klient powinien wysyłać pustą wiadomość co 10 s (tak robi klient wyścigowy; nasz test bez niej działał 80 s), oraz czy suma lotów z IMU zgadza się z przyrostem `logged_time`.
+- **Kierunek:** WebSocket jako źródło pojedynczych lotów, gdy gra i companion działają razem; `logged_time` z bazy jako pewny bilans i uzupełnienie lotów, których WebSocket nie złapał (companion wyłączony, WS wyłączony w grze).
 
 **Później:** Liftoff przez telemetrię UDP (`TelemetryConfiguration.json`) dałby prawdziwy czas w powietrzu zamiast czasu z menu, który liczy Steam. Wymaga ustalenia formatu pakietów na żywym strumieniu. Inne symulatory spoza Steama dodaje się jako kolejne implementacje `SimSource`.
 
@@ -289,13 +294,13 @@ Uczciwie o minusach Tauri:
 
 | # | Etap | Gdzie | Wynik |
 |---|---|---|---|
-| 0 | **Rozpoznanie danych VelociDrone** | Twój komputer | Paczka z folderu danych VelociDrone (i eksport klucza rejestru na Windowsie). Ustalamy format, czy są pojedyncze sesje, czy tylko licznik. |
+| 0 | ~~Rozpoznanie danych VelociDrone~~ **Zrobione 20.10.2026** | Twój komputer | Baza `user*.db` (łączny czas) i WebSocket (pojedyncze loty) potwierdzone, patrz 4.3. |
 | 0b | Wydzielenie `packages/ui` i `packages/shared` | `dronebook` (1 PR) | npm workspaces, przeniesione komponenty i tokeny, ten sam wygląd (CSS bajt w bajt, zrzuty bez różnic). |
 | 1 | Backend parowania i sesji | `dronebook` (1 PR) | `/api/companion/*`, token `dbc_`, `source: 'companion'`, strona `/companion/link`, prawdziwy stan `CompanionCard`, EN/PL, testy dymne w `npm run smoke`. |
 | 2 | Szkielet companiona | `dronebook/apps/companion` | Tauri 2 + React, zasobnik, dwa okna, parowanie, pęk kluczy, adres serwera, CI budujące 3 systemy (bez podpisu). |
 | 3 | Czytnik VelociDrone | `dronebook/apps/companion` | `SimSource` dla VelociDrone, kolejka offline, pierwszy import historii, wpisy w logbooku. |
 | 4 | Aktualizacje i wydanie | oba repo | Updater, `latest.json`, linki na `/download`, decyzja o podpisach. |
-| 5 | Później | | WebSocket VelociDrone (wyścigi, okrążenia), Liftoff UDP, kolejne symulatory. |
+| 5 | Później | | Okrążenia z WebSocketu VelociDrone, Liftoff UDP, kolejne symulatory. |
 
 Etapy 1 i 2 można robić równolegle, gdy etap 0 trwa.
 
@@ -305,7 +310,7 @@ Etapy 1 i 2 można robić równolegle, gdy etap 0 trwa.
 
 | Ryzyko | Wpływ | Co z tym robimy |
 |---|---|---|
-| Format danych VelociDrone nieczytelny lub zaszyfrowany | Companion nie ma czego czytać | Etap 0 przed kodem; plan B: WebSocket wyścigowy + ręczny „licznik startowy”. |
+| Format danych VelociDrone nieczytelny lub zaszyfrowany | Companion nie ma czego czytać | Sprawdzone w etapie 0: baza to zwykłe SQLite, WebSocket to JSON. |
 | VelociDrone zmieni format w aktualizacji | Synchronizacja przestaje działać | Czytnik wykrywa nieznany format i pokazuje komunikat zamiast zgadywać; wersjonowane parsery. |
 | „Reset game” zeruje licznik | Utracone lub zdublowane godziny | Kursor po stronie companiona, spadek licznika = nowa baza. |
 | Różnice WebKitGTK / WebKit | Coś w oknie DroneBooka wygląda inaczej | Jednorazowy test każdej zakładki na 3 systemach przed etapem 4. |
@@ -321,7 +326,7 @@ Etapy 1 i 2 można robić równolegle, gdy etap 0 trwa.
 2. **Tauri 2 (Rust)** czy wolisz Electron, żeby zostać przy TypeScripcie?
 3. ~~Gdzie kod companiona~~ **Zdecydowane 7.10.2026: monorepo** (`dronebook/apps/companion` + `packages/ui`), `dronebook-companion` jako publiczne repo tylko na wydania.
 4. **Wpisy w logbooku:** jeden na dzień i symulator (rekomendacja, jak Steam) czy każda sesja osobno?
-5. **Etap 0:** możesz spakować folder danych VelociDrone ze swojego komputera i wrzucić go tutaj?
+5. ~~Etap 0~~ **Zrobione 20.10.2026** na komputerze Michała (patrz 4.3).
 
 ## Źródła
 
